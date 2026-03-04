@@ -526,5 +526,237 @@ TanStack refetches tasks
 UI updates
 
 ---------------------------------------------------------------------------------------------------------------
+Now we will study about , ⭐️ " Optimistic updates " ⭐️
 
-Last four steps left 9 , 10 , 11 , 12 ---- See chatgpt to study next -> Chat name "Tanstack Query Overview"
+Toh iska matlab yeh hai ki , abhi tak agar hume koi query delete karni hoti thi , toh Hum kya karte the.
+We do these three Updates :
+Click delete
+     ↓
+Wait for server
+     ↓
+UI updates
+
+
+But agar hum ese karne lag jaayenge , toh yeh approach bahut slow lagegi , kyuki kya pata server delete karne
+me kitna time le , So, Companies like Twitter,Instagram etc. Use optimistic update method to make this fast.
+So what they do ?
+
+Toh wo companies kya karti hai wo is model ko use karti hai .
+Click delete
+      ↓
+UI updates instantly
+      ↓
+Server confirms later
+
+Yaani hota yeh hai ki jab aadmi DELETE par click karta hai , toh instantly UI update hota hai pehle and then
+Server request runs in background and wait for the server confirmation and jab server peeche db me wo delete karke success response karta hai tab wo UI change ko system permanent maan leta hai , but let say if server fails then "rollback" ho jaata hai yaani jo screen par dikh raha tha deleted wo wapas aa jaata hai .Similiar concept like transaction agar server success then change permanent or else rollback happens means no change happens . So, <Either change will happen for sure or NO change will happen >
+
+Click Delete
+   ↓
+UI updates instantly
+   ↓
+Server request -> If Success -> Permanent
+   ↓
+If Fail → Rollback
+
+
+
+
+Now how this approach is more beneficial ?
+Because It
+1. Make UI instant
+2. Improve user experience
+3. Reduce perceived latency ( means Making the app feel faster to the user, even if the server actually takes time to respond.)
+4. Keep data safe with rollback
+
+
+
+Now how we achieved it here?
+
+Humne yaha kiya yeh hai ki 
+1. Sabse pehle humne simple yeh banaya <const deleteMutation = useMutation()>
+2. Now ab humne useMutation me 4 attribute paas kiye mutationFn,onMutate,onError,onSettled
+3. Toh hota yeh hai ki sabse pehle jab useMutation hook trigger hota hai .
+4. Toh phele mutation function(mutationFn) run nahi hota hai balki , sabse pehle onMutate trigger hota hai
+5. Now ab onMutate contains a function , jo sabse pehle "task id" as a parameter lega , taaki wo us task ko delete kar sake .
+6. Now ab us function me sabse pehele run hota hai .cancelQueries jo kya karta hai ki agar koi bhi refetch yaa get request running hoga use cancel kar deti hai instantly . Stop any running GET /tasks request such that it doesn't overwrite our optimistic update
+7. Now uske baad humne backup banaya hai . Humne .getQueries(yeh kisi bhi cache se daata laane ka kaam karti hai , like if we want to take some data from any cache manually) ka use kiya hai , it takes a argument jisme humne bataya hai ki kis cache se tumhe saara data laana hai (whose id is "tasks"). And then we saved that cached data in a variable named "previousTasks" .Now,our backup is ready ki agar rollback hua toh kya dikhana hai .
+8. After that what we did , Humne .setQueries ka use kiya , jiska kaam hai cache me data daalna and it is used when we want to put data manually in cache , also this takes two arguments one is "tasks-id" and one is the function we will be running . Yaani In-total yeh kya karega ki , ki "tasks" cache ka current data uthayega and uske humne filter laga diya hai jo kya karega ki us task-id waala task find karega and use delete kar dega and then new array ko wapas cache me rakh dega jisse UI bhi instantly update ho jaayegi . Remember abhi tak server request nahi gayi hai yaani abhi tak db me data delete nahi hua hai sirf frontend ke cache se gaya hai . Kyuki humne yaha server request nahi maari hai toh yeh kaam toh fast hota hai , toh isiliye we see the change instantly .
+9. Now,ab humne us previous task me jo backup data store kiya tha use return kar denge taaki aane next aage we can use it . Jab bhi hum on mutate ke function se kuch return karte hai , toh wo always ek context naam ke object me save hota hai as a key-value pair . And we can access it like context.previousTasks .
+10. Now,after this all a "mutationFn" runs and then ek DELETE request jaayegi db me change ke liye .
+11. Now agar ab agar wo request fail hui yaani db me change nahi ho raha hai , toh use handle karne ke liye we have OnError: attribute jo kya karta hai , ki agar error aaya toh roll back kar dega yaani cache me wapas jo backup kiya tha use wapas daal dega jisse wapas se frontend rollback ho jaayega . 
+12. Now, a last step is left which is tricky
+13. Now ab chahe request success ho yaa error aaye ek cheez chalti hi chalti hai hamesha which is OnSettle:
+14. Now OnSettle kya karta hai ki , wo "tasks" cache me pade data ko invalidate yaani stale(outdated) kar dega jisse kya hoga ki ek refetch request last me jaayegi , jo GET request maaregi and again data db se laakar cache me daal degi jisse , jisse phir UI update hoga and we see final state on UI .
+
+
+<Question>
+Why we inavlidate queries ?
+<Answer>
+Yeh step isliye karte hai last me ki taaki jo db me hai wahi UI par bhi ho , esa galti se bhi nahi hona chahiye ki frontend pe kuch aur chal raha hai and db me kuch aur means its the last final check ki sab proper and in-sync hai naa .
+
+
+<Question>
+If server fails ,At that time then we just refetch and current data will come and we just show it on screen UI , Whats the point of making backup then ?
+<Answer>
+Its because :
+If server returns false then through backup instantly previous state dikh jayegi, and then refetch hoga and data aayega and show ho jayega.
+But if backup nahi hai, then if server returns false uske baad refetch hoga, but utni der tak wrong state screen par dikhti rahegi jab tak refetch complete nahi hota.
+So to make sure wrong thing screen par jyada time tak na dikhe, we use previous backup (previousTasks) so that UI instantly rollback ho jaye.
+
+
+
+
+<Question>
+What is old in this 👇
+queryClient.setQueryData(["tasks"], (old: any) =>
+      old.filter((task: Task) => task.id !== taskId)
+    ) 
+?
+
+<Answer>
+Current cache value at the moment setQueryData runs .
+
+
+<Full Optimistic Update Flow>
+
+User clicks Delete button
+      ↓
+mutation.mutate(taskId) runs
+      ↓
+onMutate executes (before API request)
+      ↓
+cancelQueries(["tasks"])
+Stops any running GET /tasks request
+      ↓
+getQueryData(["tasks"])
+Backup current tasks → previousTasks
+      ↓
+setQueryData(["tasks"])
+Optimistically remove task from cache
+      ↓
+Cache updates immediately
+      ↓
+React components re-render
+      ↓
+UI instantly removes the task
+      ↓
+DELETE /tasks/:id request sent to server
+
+
+
+<Case 1️⃣ Server Success>
+
+Server successfully deletes task
+      ↓
+onSettled runs
+      ↓
+invalidateQueries(["tasks"])
+      ↓
+React Query refetches GET /tasks
+      ↓
+Latest tasks returned from server
+      ↓
+Cache updated
+      ↓
+UI re-renders
+      ↓
+UI stays correct and synced with server
+
+
+
+<Case 2️⃣ Server Error>
+
+Server fails to delete task
+      ↓
+onError runs
+      ↓
+Rollback using previousTasks
+queryClient.setQueryData(["tasks"], previousTasks)
+      ↓
+Cache restored
+      ↓
+React components re-render
+      ↓
+UI instantly returns to previous state
+      ↓
+onSettled runs
+      ↓
+invalidateQueries(["tasks"])
+      ↓
+GET /tasks runs again
+      ↓
+Cache updated with server data
+      ↓
+UI fully synchronized
+
+
+
+---------------------------------------------------------------------------------------------------------------
+Now, we will study about ⭐️Stale time and Caching Behaviour⭐️
+
+
+1st Info 🟡
+Tanstack has three caching states :
+Fresh
+Stale
+Fetching
+
+
+Fresh -> Matlab tumhara data jo cached hai wo "fresh" hai and jab tak data fresh state me hota hai , tab tak Tanstack kabhi bhi refetch nahi karta hai us cache ko . 
+
+Stale -> Matlab tumhara data jo cached hai wo "outdated" ho gaya hai and if data or cache is in stale state toh if we change tabs or internet connect etc. conditions me refetch ho jaata hai .
+
+Fetching -> It is the state jab naa toh data stale hai and na hi fresh , abhi data hi nahi hai , abhi wo fetch ho raha hai means the middle state .
+
+
+2nd Info 🟡
+By default <staleTime = 0> hota hai .
+Yaani jab bhi refetch hota hai and data aata hai , toh <aate hi wo data stale ho jaata hai> yaani outdated ho jaata hai .
+
+
+3rd Info 🟡
+Tanstack Query hume "staleTime(in milliseconds)" karke ek attribute deta hai . Jise hum set kar sakte hai apne accordingly      
+For example : 
+
+<const { data, isLoading, error } = useQuery({
+  queryKey: ["tasks"],
+  queryFn: fetchTasks,
+  staleTime: 10000
+})>
+
+Now this means ki :
+Data stays fresh for 10 seconds , yaani ab hum chahe jo bhi kare like "tabs change" ,"network reconnnect", "component mounting" refetch nahi hoga ek bhi baar for 10 seconds as for 10 seconds our data in cache is fresh.
+
+
+4th Info 🟡
+gcTime (Garbage Collection Time) is a setting in TanStack Query that decides "how long unused query data should stay in cache before being deleted" . Yaani agar humne ek cache bana diya and usme data pada hai but bahut time se us data ka kahi bhi use nahi ho raha hai , wo bus cache memory me pada hua hai , toh kitni der baad wo unused data apne aap delete ho jaayega , that is gc Time .
+
+--> For controling gcTime we have a attribute named "gcTime"
+
+For example:
+
+useQuery({
+  queryKey: ["tasks"],
+  queryFn: fetchTasks,
+  gcTime: 60000(milliseconds)
+})
+
+which means "Cache will be removed after 1 minute or we can say 60 seconds of inactivity"
+
+REMEMBER:
+1sec = 1000milliseconds
+
+
+ONE IMPORTANT NOTE :
+queryClient.refetchQueries({ queryKey: ["tasks"] })
+
+.refetchQueries se hum kisi cache ko manually refetch kar sakte hai .
+
+---------------------------------------------------------------------------------------------------------------
+
+
+Last one step left -> Step 12 ---- See chatgpt to study next -> Chat name "Tanstack Query Overview"
+
+
+---------------------------------------------------------------------------------------------------------------

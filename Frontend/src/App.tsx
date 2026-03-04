@@ -24,12 +24,51 @@ function App() {
   }
   })
 
+
+  //Without Optimistic Approach || If we want to make delete , without Optimistic approach just uncomment it and comment down the other one ⬇️
+  
+  // const deleteMutation = useMutation({
+  // mutationFn: deleteTask,
+  // onSuccess: () => {
+  //   queryClient.invalidateQueries({ queryKey: ["tasks"] })
+  // }
+  // })
+
+
+  //With Optimistic Approach || If we want to make delete , with Optimistic approach just uncomment it and comment down the other one.☝️
   const deleteMutation = useMutation({
   mutationFn: deleteTask,
-  onSuccess: () => {
+
+  // Runs before mutationFn means even before the delete request to server .
+  onMutate: async (taskId: number) => {
+
+    await queryClient.cancelQueries({ queryKey: ["tasks"] })
+
+    const previousTasks = queryClient.getQueryData(["tasks"])
+
+    queryClient.setQueryData(["tasks"], (old: any) =>
+      old.filter((task: Task) => task.id !== taskId)
+    )
+
+    return { previousTasks }
+  },
+
+  // If error happens rollback
+  onError: (err, variables, context) => {
+    queryClient.setQueryData(["tasks"], context?.previousTasks)
+  },
+
+  // Always refetch after mutation
+  onSettled: () => {
     queryClient.invalidateQueries({ queryKey: ["tasks"] })
   }
-  })
+})
+
+
+
+
+
+
 
   const queryClient = useQueryClient()
   const [taskTitle, setTaskTitle] = useState("")
