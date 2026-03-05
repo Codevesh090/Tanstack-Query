@@ -756,7 +756,7 @@ queryClient.refetchQueries({ queryKey: ["tasks"] })
 ---------------------------------------------------------------------------------------------------------------
 
 
-Last one step left -> Step 12 ---- See chatgpt to study next -> Chat name "Tanstack Query Overview"
+Last one step left -> Step 12 ---- See chatgpt to study next -> Chat name "Tanstack Query Overview".
 
 
 ---------------------------------------------------------------------------------------------------------------
